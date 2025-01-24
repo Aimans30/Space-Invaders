@@ -6,20 +6,19 @@ const levelDisplay = document.getElementById('level-display');
 const scoreDisplay = document.getElementById('score-display');
 const bossAnnouncement = document.getElementById('boss-announcement');
 
-let playerX = window.innerWidth / 2 - 25; // Initial player position
+let playerX = window.innerWidth / 2 - 25;
 let bullets = [];
 let enemies = [];
 let enemySpeed = 2;
 let enemyDirection = 1;
 let currentLevel = 1;
-let bossHealth = 5;
+let isBossLevel = false;
+let bossHealth = 0;
 let bossActive = false;
 let score = 0;
 
-// Create player
 player.style.left = `${playerX}px`;
 
-// Move player
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft' && playerX > 0) {
     playerX -= 10;
@@ -31,7 +30,6 @@ document.addEventListener('keydown', (e) => {
   player.style.left = `${playerX}px`;
 });
 
-// Shoot bullet
 function shoot() {
   const bullet = document.createElement('div');
   bullet.classList.add('bullet');
@@ -41,7 +39,6 @@ function shoot() {
   bullets.push(bullet);
 }
 
-// Move bullets
 function moveBullets() {
   bullets.forEach((bullet, index) => {
     const bottom = parseInt(bullet.style.bottom);
@@ -54,9 +51,8 @@ function moveBullets() {
   });
 }
 
-// Create enemies
 function createEnemies() {
-  enemiesContainer.innerHTML = ''; // Clear existing enemies
+  enemiesContainer.innerHTML = '';
   enemies = [];
 
   for (let row = 0; row < 3; row++) {
@@ -71,8 +67,9 @@ function createEnemies() {
   }
 }
 
-// Move enemies
 function moveEnemies() {
+  if (isBossLevel) return;
+
   const leftmost = Math.min(...enemies.map(enemy => parseInt(enemy.style.left)));
   const rightmost = Math.max(...enemies.map(enemy => parseInt(enemy.style.left) + 40));
 
@@ -88,26 +85,39 @@ function moveEnemies() {
   });
 }
 
-// Create boss
 function createBoss() {
+  clearEnemies();
   bossElement.style.display = 'block';
   bossElement.style.left = `${window.innerWidth / 2 - 40}px`;
   bossElement.style.top = '50px';
   bossActive = true;
-  bossHealth = 5; // Reset boss health
+  isBossLevel = true;
+
+  bossHealth = 5 + currentLevel * 2;
+  enemySpeed = 2 + currentLevel * 0.5;
+
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 6; col++) {
+      const enemy = document.createElement('div');
+      enemy.classList.add('enemy');
+      enemy.style.left = `${col * 80 + 50}px`;
+      enemy.style.top = `${row * 60 + 100}px`;
+      enemiesContainer.appendChild(enemy);
+      enemies.push(enemy);
+    }
+  }
+
   announceBoss();
 }
 
-// Announce boss
 function announceBoss() {
-  bossAnnouncement.textContent = `BOSS FIGHT! Level ${currentLevel}`;
+  bossAnnouncement.textContent = `BOSS FIGHT!`;
   bossAnnouncement.style.display = 'block';
   setTimeout(() => {
     bossAnnouncement.style.display = 'none';
-  }, 3000); // Hide announcement after 3 seconds
+  }, 1000);
 }
 
-// Move boss
 function moveBoss() {
   if (bossActive) {
     const bossRect = bossElement.getBoundingClientRect();
@@ -115,15 +125,47 @@ function moveBoss() {
       enemyDirection *= -1;
     }
     bossElement.style.left = `${parseInt(bossElement.style.left) + enemySpeed * enemyDirection}px`;
+
+    if (Math.random() < 0.02) {
+      shootBossLaser();
+    }
   }
 }
 
-// Check collisions
+function shootBossLaser() {
+  const laser = document.createElement('div');
+  laser.classList.add('boss-laser');
+  laser.style.left = `${parseInt(bossElement.style.left) + 40}px`;
+  laser.style.top = '100px';
+  gameContainer.appendChild(laser);
+
+  const interval = setInterval(() => {
+    const top = parseInt(laser.style.top);
+    if (top > window.innerHeight) {
+      laser.remove();
+      clearInterval(interval);
+    } else {
+      laser.style.top = `${top + 15}px`;
+    }
+
+    const laserRect = laser.getBoundingClientRect();
+    const playerRect = player.getBoundingClientRect();
+    if (
+      laserRect.left < playerRect.right &&
+      laserRect.right > playerRect.left &&
+      laserRect.top < playerRect.bottom &&
+      laserRect.bottom > playerRect.top
+    ) {
+      alert('Game Over!');
+      window.location.reload();
+    }
+  }, 50);
+}
+
 function checkCollisions() {
   bullets.forEach((bullet, bulletIndex) => {
     const bulletRect = bullet.getBoundingClientRect();
 
-    // Check collisions with enemies
     enemies.forEach((enemy, enemyIndex) => {
       const enemyRect = enemy.getBoundingClientRect();
       if (
@@ -136,54 +178,72 @@ function checkCollisions() {
         enemy.remove();
         bullets.splice(bulletIndex, 1);
         enemies.splice(enemyIndex, 1);
-        score += 10; // Increase score
+        score += 10;
         scoreDisplay.textContent = `Score: ${score}`;
       }
     });
 
-    // Check collisions with boss
     if (bossActive) {
-      const bossRect = bossElement.getBoundingClientRect();
-      if (
-        bulletRect.left < bossRect.right &&
-        bulletRect.right > bossRect.left &&
-        bulletRect.top < bossRect.bottom &&
-        bulletRect.bottom > bossRect.top
-      ) {
-        bullet.remove();
-        bullets.splice(bulletIndex, 1);
-        bossHealth--;
-        if (bossHealth <= 0) {
-          bossElement.style.display = 'none';
-          bossActive = false;
-          score += 100; // Bonus score for defeating boss
-          scoreDisplay.textContent = `Score: ${score}`;
-          currentLevel++;
-          levelDisplay.textContent = `Level: ${currentLevel}`;
-          createEnemies();
-        }
-      }
+      checkBossCollisions(bullet, bulletIndex);
     }
   });
 }
 
-// Check level completion
-function checkLevelCompletion() {
-  if (enemies.length === 0 && !bossActive) {
-    createBoss();
+function checkBossCollisions(bullet, bulletIndex) {
+  const bossRect = bossElement.getBoundingClientRect();
+  const bulletRect = bullet.getBoundingClientRect();
+  if (
+    bulletRect.left < bossRect.right &&
+    bulletRect.right > bossRect.left &&
+    bulletRect.top < bossRect.bottom &&
+    bulletRect.bottom > bossRect.top
+  ) {
+    bullet.remove();
+    bullets.splice(bulletIndex, 1);
+    bossHealth--;
+    
+    if (bossHealth <= 0) {
+      bossElement.style.display = 'none';
+      bossActive = false;
+      score += 100;
+      scoreDisplay.textContent = `Score: ${score}`;
+      isBossLevel = false;
+      currentLevel++;
+      levelDisplay.textContent = `Level: ${currentLevel}`;
+      createEnemies();
+    }
   }
 }
 
-// Game loop
+function clearEnemies() {
+  enemies.forEach(enemy => enemy.remove());
+  enemies = [];
+}
+
+function checkLevelCompletion() {
+  if (isBossLevel) {
+    if (bossHealth <= 0) {
+      isBossLevel = false;
+      currentLevel++;
+      levelDisplay.textContent = `Level: ${currentLevel}`;
+      createEnemies();
+    }
+  } else {
+    if (enemies.length === 0) {
+      isBossLevel = true;
+      createBoss();
+    }
+  }
+}
+
 function gameLoop() {
   moveBullets();
   moveEnemies();
-  moveBoss();
+  if (isBossLevel) moveBoss();
   checkCollisions();
   checkLevelCompletion();
   requestAnimationFrame(gameLoop);
 }
 
-// Initialize game
 createEnemies();
 gameLoop();
